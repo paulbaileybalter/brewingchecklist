@@ -317,7 +317,6 @@
             <label for="f-date">Date</label>
             <input id="f-date" type="date">
           </div>
-          <span class="formtag">Form BAL-BRW-FORM-041</span>
         </div>
         <div>
           <div class="counter">
@@ -344,7 +343,7 @@
 </main>
 
 <footer>
-  <b>Balter Brewing</b> &middot; Form BAL-BRW-FORM-041 &middot; Brewery Team Leader Checklist<br>
+  <b>Balter Brewing</b> &middot; Brewery Team Leader Checklist<br>
   Ticks and comments are saved on this device for each date.
 </footer>
 </div>
@@ -372,8 +371,7 @@
 (function(){
   'use strict';
 
-  /* ================= Checklist content (from BAL-BRW-FORM-041) ================= */
-  var FORM_NO = 'BAL-BRW-FORM-041';
+  /* ================= Checklist content ================= */
   var TITLE = 'Brewery Team Leader Checklist';
   var SECTIONS = [
     {id:'general', title:'General', color:'teal', tint:'#47D7AC', icon:'general', items:[
@@ -617,7 +615,7 @@
       '<td width="52" valign="middle" style="width:52px;"><img src="'+PNG.logo+'" width="48" height="48" alt="Balter Brewing" style="display:block;border:0;width:48px;height:48px;"></td>'+
       '<td valign="middle" style="padding-left:12px;"><div style="'+FONT+'font-size:10.5px;letter-spacing:2px;text-transform:uppercase;color:#7566A0;font-weight:600;line-height:1.2;">Balter Brewing</div>'+
       '<div style="'+FONT+'font-size:21px;font-weight:700;color:#000000;line-height:1.2;padding-top:3px;">'+TITLE+'</div></td>'+
-      '<td align="right" valign="middle" style="white-space:nowrap;"><span style="'+FONT+'display:inline-block;font-size:11px;font-weight:600;letter-spacing:.6px;color:#7566A0;background:#EFEDF4;border-radius:999px;padding:5px 11px;">Form '+FORM_NO+'</span></td>'+
+      
       '</tr></table></td></tr>';
     head += '<tr><td style="padding:12px 22px 0 22px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:separate;background:#FAFAF7;border:1px solid #E7E5DE;border-radius:12px;"><tr>'+
       '<td valign="top" style="padding:12px 16px;">'+label('Team leader')+'<div style="'+FONT+'font-size:15px;font-weight:600;color:#000000;padding-top:3px;">'+(name?esc(name):'&mdash;')+'</div></td>'+
@@ -686,7 +684,7 @@
     /* ---- Footer ---- */
     var now = new Date();
     var gen = now.toLocaleDateString('en-AU',{day:'numeric',month:'short',year:'numeric'})+', '+now.toLocaleTimeString('en-AU',{hour:'numeric',minute:'2-digit'});
-    h += '<tr><td align="center" style="'+FONT+'padding:4px 0 8px 0;font-size:11.5px;color:#6B685D;line-height:1.6;"><b style="color:#000000;font-weight:600;">Balter Brewing</b> &middot; Form '+FORM_NO+' &middot; '+TITLE+'<br>Generated '+esc(gen)+'</td></tr>';
+    h += '<tr><td align="center" style="'+FONT+'padding:4px 0 8px 0;font-size:11.5px;color:#6B685D;line-height:1.6;"><b style="color:#000000;font-weight:600;">Balter Brewing</b> &middot; '+TITLE+'<br>Generated '+esc(gen)+'</td></tr>';
     h += '</table></td></tr></table>';
     return h;
   }
@@ -694,7 +692,6 @@
   function buildEmailText(){
     var done = allDone(), L = [];
     L.push('BALTER BREWING — '+TITLE);
-    L.push('Form '+FORM_NO);
     L.push('Team leader: '+(state.name.trim()||'—')+'    Date: '+fmtMid(state.date));
     L.push('Progress: '+done+' / '+TOTAL+' checks complete'+(done===TOTAL?'':' ('+(TOTAL-done)+' to go)'));
     L.push('');
