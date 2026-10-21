@@ -4,6 +4,7 @@
 // Required environment variable (Cloudflare Worker -> Settings -> Variables and Secrets):
 //   SITE_PASSWORD   the shared password (add it as a Secret / encrypted)
 // Optional:
+//   CHECKLIST       (KV namespace binding, set in wrangler.jsonc) shared ticks, comments and notes
 //   SESSION_SECRET  random string used to sign login cookies (defaults to SITE_PASSWORD;
 //                   changing either one signs everyone out)
 
@@ -119,6 +120,105 @@ function html(body, status = 200, extra = {}) {
   });
 }
 
+/* ------------------------------------------------------------------ *
+ * Shared checklist data (Workers KV, binding name: CHECKLIST)
+ * One KV entry per date:  day:YYYY-MM-DD
+ *   { ver, checks:{id:{v,by,t}}, comments:{id:{v,by,t}}, notes:[{id,text,by,t}] }
+ * Devices send small patches (only what changed); the server merges them,
+ * stamping each change with its own clock, so the last change to a field wins
+ * and different people's changes to different fields never overwrite each other.
+ * ------------------------------------------------------------------ */
+const ID_RE = /^[a-z]+-\d{1,2}$/;
+const NOTE_ID_RE = /^[a-z0-9-]{8,40}$/;
+const KEEP_SECONDS = 60 * 60 * 24 * 400;
+const MAX_NOTES = 60;
+
+const clean = (v, max) => String(v == null ? '' : v).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '').slice(0, max);
+
+function json(data, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex, nofollow' },
+  });
+}
+
+function emptyDoc() { return { ver: '', checks: {}, comments: {}, notes: [] }; }
+
+async function loadDoc(env, key) {
+  const doc = await env.CHECKLIST.get(key, 'json');
+  if (!doc || typeof doc !== 'object') return emptyDoc();
+  return { ver: doc.ver || '', checks: doc.checks || {}, comments: doc.comments || {}, notes: Array.isArray(doc.notes) ? doc.notes : [] };
+}
+
+async function handleApi(request, env, url) {
+  const m = url.pathname.match(/^\/api\/day\/(\d{4}-\d{2}-\d{2})$/);
+  if (!m) return json({ error: 'Not found' }, 404);
+  if (!env.CHECKLIST) return json({ error: 'KV namespace CHECKLIST is not bound' }, 503);
+
+  const date = m[1];
+  const when = Date.parse(date + 'T00:00:00Z');
+  if (isNaN(when) || Math.abs(when - Date.now()) > 1000 * 60 * 60 * 24 * 400) return json({ error: 'Bad date' }, 400);
+  const key = 'day:' + date;
+
+  if (request.method === 'GET') {
+    const doc = await loadDoc(env, key);
+    const ver = url.searchParams.get('ver');
+    if (ver && ver === doc.ver) return json({ unchanged: true, ver: doc.ver });
+    return json(doc);
+  }
+
+  // Writes: must be same-origin JSON (blocks cross-site form posts)
+  const origin = request.headers.get('Origin');
+  if (origin && origin !== url.origin) return json({ error: 'Forbidden' }, 403);
+
+  if (request.method === 'DELETE') {
+    await env.CHECKLIST.delete(key);
+    return json(emptyDoc());
+  }
+
+  if (request.method === 'PUT') {
+    if (!(request.headers.get('Content-Type') || '').includes('application/json')) return json({ error: 'Expected JSON' }, 415);
+    const text = await request.text();
+    if (text.length > 30000) return json({ error: 'Too large' }, 413);
+    let body;
+    try { body = JSON.parse(text); } catch (e) { return json({ error: 'Bad JSON' }, 400); }
+    if (!body || typeof body !== 'object') return json({ error: 'Bad body' }, 400);
+
+    const doc = await loadDoc(env, key);
+    const now = Date.now();
+
+    for (const [id, f] of Object.entries(body.checks || {}).slice(0, 60)) {
+      if (!ID_RE.test(id) || !f || typeof f !== 'object') continue;
+      if (f.v) doc.checks[id] = { v: true, by: clean(f.by, 80), t: now };
+      else delete doc.checks[id];
+    }
+    for (const [id, f] of Object.entries(body.comments || {}).slice(0, 60)) {
+      if (!ID_RE.test(id) || !f || typeof f !== 'object') continue;
+      const v = clean(f.v, 300);
+      if (v.trim()) doc.comments[id] = { v, by: clean(f.by, 80), t: now };
+      else delete doc.comments[id];
+    }
+    if (Array.isArray(body.notesRemove)) {
+      const gone = new Set(body.notesRemove.slice(0, 60).map(String));
+      doc.notes = doc.notes.filter((n) => !gone.has(n.id));
+    }
+    if (Array.isArray(body.notesAdd)) {
+      for (const a of body.notesAdd.slice(0, 10)) {
+        if (!a || !NOTE_ID_RE.test(String(a.id)) || doc.notes.some((n) => n.id === a.id)) continue;
+        const textVal = clean(a.text, 1000);
+        if (!textVal.trim() || doc.notes.length >= MAX_NOTES) continue;
+        doc.notes.push({ id: String(a.id), text: textVal, by: clean(a.by, 80), t: now });
+      }
+    }
+
+    doc.ver = crypto.randomUUID();
+    await env.CHECKLIST.put(key, JSON.stringify(doc), { expirationTtl: KEEP_SECONDS });
+    return json(doc);
+  }
+
+  return json({ error: 'Method not allowed' }, 405);
+}
+
 async function handle(request, env, next) {
   const url = new URL(request.url);
   const path = url.pathname;
@@ -160,6 +260,8 @@ async function handle(request, env, next) {
     }
     return new Response('Unauthorised', { status: 401 });
   }
+
+  if (path.startsWith('/api/')) return handleApi(request, env, url);
 
   const response = await next();
   const out = new Response(response.body, response);
